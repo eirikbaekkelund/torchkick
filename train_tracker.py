@@ -34,6 +34,10 @@ def adapt_batch_for_torchvision(batch, device):
     targets = []
     for i in range(len(images)):
         boxes = batch['boxes'][i].to(device)
+        
+        keep = (boxes[:, 2] > boxes[:, 0]) & (boxes[:, 3] > boxes[:, 1])
+        boxes = boxes[keep]
+
         num_objs = boxes.shape[0]
         labels = torch.ones((num_objs,), dtype=torch.int64, device=device)
         
@@ -73,23 +77,24 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=10)
 
 def run_training_pipeline(path_to_data_zip: str = "soccernet/tracking/tracking/train.zip"):
     DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    BATCH_SIZE = 16
+    BATCH_SIZE = 64
     NUM_EPOCHS = 10
-    LEARNING_RATE = 0.005
+    LEARNING_RATE = 0.005 * (BATCH_SIZE // 32) # = 0.01 for batch size 64
     SAVE_PATH = "player_tracker_v1.pth"
     
     print(f"Starting Training on {DEVICE}...")
 
     train_dataset = SoccerNetTrackingDataset(
         zip_path=path_to_data_zip,
-        bbox_format="xyxy" 
+        bbox_format="xyxy",
+        extract_colors=False
     )
     
     train_loader = DataLoader(
         train_dataset, 
         batch_size=BATCH_SIZE, 
         shuffle=True, 
-        num_workers=0,
+        num_workers=4,
         collate_fn=tracking_collate_fn
     )
 

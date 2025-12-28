@@ -13,5 +13,7 @@ def download_tracking_data(local_dir: str) -> None:
 
 
 if __name__ == "__main__":
-    LOCAL_DIR = "soccernet/tracking/"
+    import os
+    # abs path to soccernet/tracking
+    LOCAL_DIR = os.path.abspath("./tracking/")
     download_tracking_data(LOCAL_DIR)
