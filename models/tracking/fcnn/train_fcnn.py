@@ -3,7 +3,7 @@ import torchvision
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
-from soccernet.data import PlayerTrackingDataset, tracking_collate_fn
+from soccernet.tracking_data import PlayerTrackingDataset, tracking_collate_fn
 
 
 def get_player_detector_model(num_classes=1):
