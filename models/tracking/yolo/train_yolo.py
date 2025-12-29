@@ -9,6 +9,8 @@ from tqdm import tqdm
 from ultralytics import YOLO
 from PIL import Image
 
+from soccernet.utils import download_tracking_data
+
 
 def get_jersey_color_class(img_pil, box):
     """
@@ -22,7 +24,7 @@ def get_jersey_color_class(img_pil, box):
     5: Yellow
     6: Green
     """
-    # Convert PIL to CV2 (RGB -> BGR -> HSV)
+    # PIL to CV2 (RGB -> BGR -> HSV)
     img_np = np.array(img_pil)
     x, y, w, h = map(int, box)
 
@@ -35,7 +37,6 @@ def get_jersey_color_class(img_pil, box):
         return 0
 
     ch, cw = crop.shape[:2]
-    # Take middle 50% of width, and top 20-60% of height (chest area)
     crop_center = crop[int(ch * 0.2) : int(ch * 0.6), int(cw * 0.25) : int(cw * 0.75)]
 
     if crop_center.size == 0:
@@ -75,22 +76,18 @@ def convert_to_yolo_format(zip_path, output_dir, use_colors=True):
     images_dir = output_dir / "images" / "train"
     labels_dir = output_dir / "labels" / "train"
 
-    # Create directories
     images_dir.mkdir(parents=True, exist_ok=True)
     labels_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Converting data from {zip_path} to YOLO format in {output_dir} (use_colors={use_colors})...")
 
-    # Use fsspec to read zip without extracting everything first
     fs = fsspec.filesystem("zip", fo=zip_path)
 
-    # Find all sequences
-    # Structure is usually root/sequence/img1/... and root/sequence/gt/gt.txt
+    # structure is root/sequence/img1/... and root/sequence/gt/gt.txt
     # fs.ls("") returns a list of strings or dicts depending on version
     root_contents = fs.ls("")
     root_dirs = []
     for p in root_contents:
-        # Handle dict output from fs.ls
         path_str = p["name"] if isinstance(p, dict) else p
         if fs.isdir(path_str):
             root_dirs.append(path_str)
@@ -99,9 +96,8 @@ def convert_to_yolo_format(zip_path, output_dir, use_colors=True):
         print("Error: No root directories found in zip.")
         return
 
-    root = root_dirs[0]  # e.g., "train"
+    root = root_dirs[0]  # e.g., "train"/"test"/"challenge"
 
-    # List sequences inside root
     seq_contents = fs.ls(root)
     sequences = []
     for p in seq_contents:
@@ -109,8 +105,9 @@ def convert_to_yolo_format(zip_path, output_dir, use_colors=True):
         if fs.isdir(path_str):
             sequences.append(path_str)
 
-    # Cache track colors to ensure a track ID always gets the same class
-    # (Optional, but helps consistency)
+    # TODO: revise below
+    # NOTE: cache track colors to ensure a track ID always gets the same class
+    # this is optional, but helps with consistency when tracking like bytetrack/botsort is unused
     track_color_cache = {}  # { (seq_name, track_id): class_id }
 
     for seq_path in tqdm(sequences):
@@ -120,7 +117,6 @@ def convert_to_yolo_format(zip_path, output_dir, use_colors=True):
         if not fs.exists(gt_path):
             continue
 
-        # Read GT
         with fs.open(gt_path, "rb") as f:
             df = pd.read_csv(
                 f,
@@ -159,10 +155,10 @@ def convert_to_yolo_format(zip_path, output_dir, use_colors=True):
                         color_class = get_jersey_color_class(img, (x, y, w, h))
                         if color_class != 0:
                             track_color_cache[cache_key] = color_class
-                    cls = color_class
+                    cls_assignment = color_class
                 else:
-                    # Default to single class 'player'
-                    cls = 0
+                    # NOTE: single class is just 0 (player)
+                    cls_assignment = 0
 
                 cx = (x + w / 2) / img_w
                 cy = (y + h / 2) / img_h
@@ -174,7 +170,7 @@ def convert_to_yolo_format(zip_path, output_dir, use_colors=True):
                 nw = np.clip(nw, 0, 1)
                 nh = np.clip(nh, 0, 1)
 
-                yolo_lines.append(f"{cls} {cx:.6f} {cy:.6f} {nw:.6f} {nh:.6f}")
+                yolo_lines.append(f"{cls_assignment} {cx:.6f} {cy:.6f} {nw:.6f} {nh:.6f}")
 
             with open(labels_dir / f"{save_name}.txt", "w") as f:
                 f.write("\n".join(yolo_lines))
@@ -216,38 +212,47 @@ def train_yolo():
 
     use_colors = not args.no_colors
 
-    # Allow user to specify dataset path via env var or argument, default to local conversion
-    DATA_DIR = os.environ.get("YOLO_DATASET_DIR", "yolo_dataset")
+    default_base = "yolo_dataset"
+    if os.path.exists("/workspace"):
+        default_base = "/workspace/yolo_dataset"
+
+    DATA_DIR = os.environ.get("YOLO_DATASET_DIR", default_base)
     if use_colors:
         DATA_DIR += "_colors"
 
     ZIP_PATH = "soccernet/tracking/tracking/train.zip"
 
     if not os.path.exists(DATA_DIR):
-        print(f"Dataset not found at {DATA_DIR}. Attempting to convert from {ZIP_PATH}...")
+        print(f"Dataset not found at {DATA_DIR}. Checking for raw zip...")
+
+        if not os.path.exists(ZIP_PATH):
+            print(f"Zip file {ZIP_PATH} not found. Downloading using SoccerNet utils...")
+            download_dir = "soccernet/tracking"
+            download_tracking_data(download_dir)
+
         if os.path.exists(ZIP_PATH):
             convert_to_yolo_format(ZIP_PATH, DATA_DIR, use_colors=use_colors)
         else:
-            print(f"Warning: Zip file {ZIP_PATH} not found. Please ensure you have a dataset prepared in {DATA_DIR}")
-            # We continue, assuming the user might have mounted data there or will provide it
+            print(f"Error: Failed to find or download {ZIP_PATH}. Please check your internet connection or disk space.")
+            return
     else:
         print(f"Dataset found at {DATA_DIR}, skipping conversion.")
 
-    # Load YOLO11 model (nano version as requested, or use 'yolo11m.pt' for medium)
     try:
         model = YOLO("yolo11n.pt")
     except Exception as e:
         print(f"Could not load yolo11n.pt: {e}. Please ensure ultralytics is updated.")
         return
 
-    project_name = "football_yolo_colors" if use_colors else "football_yolo_simple"
+    project_name = "player_tracker_yolo11n"
+    if use_colors:
+        project_name += "_colors"
 
-    # Train the model
     results = model.train(
         data=f"{DATA_DIR}/dataset.yaml",
-        epochs=50,  # Increased epochs as per recommendation
+        epochs=50,
         imgsz=640,
-        batch=32,  # Adjusted batch size
+        batch=256,
         device=0,
         project=project_name,
         name="yolo11n_football",

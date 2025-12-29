@@ -1,10 +1,9 @@
 import cv2
-import numpy as np
 import argparse
 import time
 import torch
 from ultralytics import YOLO
-from match_state.player_tracker import PlayerTracker
+from match_state.player_tracker import TeamClassifier
 
 
 def process_video(video_path: str, model_path: str, max_duration: float = None, show_fps: bool = True) -> None:
@@ -14,7 +13,7 @@ def process_video(video_path: str, model_path: str, max_duration: float = None, 
     model.to(device)
     print(f"Running on: {device}")
 
-    tracker = PlayerTracker(max_age=10, iou_threshold=0.3)
+    team_classifier = TeamClassifier()
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -51,18 +50,18 @@ def process_video(video_path: str, model_path: str, max_duration: float = None, 
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
         start = time.perf_counter()
-        results = model(frame_bgr, verbose=False)  # NOTE: yolo expects bgr instead of rgb
 
-        valid_detections = []
-        for result in results:
-            boxes = result.boxes
-            for i in range(len(boxes)):
-                conf = float(boxes.conf[i])
-                if conf > 0.5:
-                    x1, y1, x2, y2 = boxes.xyxy[i].cpu().numpy()
-                    valid_detections.append(np.array([x1, y1, x2, y2, conf]))
+        results = model.track(frame_bgr, persist=True, tracker="bytetrack.yaml", verbose=False)
 
-        active_tracks = tracker.update(valid_detections, frame_rgb)
+        tracks_list = []
+        if results[0].boxes.id is not None:
+            boxes = results[0].boxes.xyxy.cpu().numpy()
+            track_ids = results[0].boxes.id.int().cpu().tolist()
+
+            for box, track_id in zip(boxes, track_ids):
+                tracks_list.append({'id': track_id, 'box': box, 'team': 0})  # TODO: refs/outliers tbd
+
+        active_tracks = team_classifier.update(tracks_list, frame_rgb)
         end = time.perf_counter()
 
         for track in active_tracks:

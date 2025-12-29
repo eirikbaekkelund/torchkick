@@ -8,6 +8,12 @@ __pycache__/
 *.zip
 soccernet/tracking/*
 soccernet/calibration/*
+player_tracker*/
 *egg-info/
 yolo_dataset/
 SV_*
+*.csv
+*.jpg
+*.png
+*.jpeg
+logs/

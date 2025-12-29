@@ -16,7 +16,7 @@ def download_pitch_calibration(local_dir: str) -> None:
 
 
 if __name__ == "__main__":
-    # LOCAL_DIR = "soccernet/tracking/"
-    # download_tracking_data(LOCAL_DIR)
-    LOCAL_DIR = "soccernet/calibration/"
-    download_pitch_calibration(LOCAL_DIR)
+    LOCAL_DIR = "soccernet/tracking/"
+    download_tracking_data(LOCAL_DIR)
+    # LOCAL_DIR = "soccernet/calibration/"
+    # download_pitch_calibration(LOCAL_DIR)
