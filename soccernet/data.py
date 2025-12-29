@@ -14,7 +14,8 @@ class PlayerTrackingDataset(Dataset):
         zip_path: str, 
         transform=None,
         bbox_format: Literal["xywh", "xyxy", "cxcywh"] = "xyxy",
-        debug: bool = False
+        debug: bool = False,
+        extract_colors: bool = False
     ):
         """
         Args:
@@ -25,11 +26,13 @@ class PlayerTrackingDataset(Dataset):
                 - "xyxy": [x1, y1, x2, y2] - top-left + bottom-right corners
                 - "cxcywh": [cx, cy, w, h] - center + dimensions
             debug: Print debug information about loaded annotations
+            extract_colors: Whether to extract jersey color features (slow)
         """
         self.zip_path = zip_path
         self.transform = transform
         self.bbox_format = bbox_format
         self.debug = debug
+        self.extract_colors = extract_colors
 
         self.samples = []
         self.annotations = {}
@@ -192,10 +195,13 @@ class PlayerTrackingDataset(Dataset):
         if self.transform:
             image = self.transform(image)
         
-        color_features = [
-            self._jersey_color_feature(image, box) 
-            for box in boxes_mot
-        ]
+        if self.extract_colors:
+            color_features = [
+                self._jersey_color_feature(image, box) 
+                for box in boxes_mot
+            ]
+        else:
+            color_features = []
 
         boxes = self._convert_bbox_format(boxes_mot)
         
