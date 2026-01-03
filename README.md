@@ -2,7 +2,7 @@
 
 A Computer vision toolkit for football video analysis. Detects players, tracks them across frames, and projects positions onto a 2D pitch map. Personal project that may or may not turn useful one day.
 
-![Spatial Homography Demo](images/spatial_homography_2D.png)
+![Demo](examples/images/demo.gif)
 
 ## Install
 
